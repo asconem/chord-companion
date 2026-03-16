@@ -6,6 +6,13 @@ export interface SongData {
   syncMarks: number[];
 }
 
+export interface LibraryEntry {
+  hash: string;
+  title: string;
+  songText: string;
+  savedAt: number;
+}
+
 /** SHA-256 hash of song text, hex-encoded. Used as Redis key. */
 export async function hashSongText(text: string): Promise<string> {
   const encoded = new TextEncoder().encode(text.trim());
@@ -38,6 +45,45 @@ export async function saveSongData(hash: string, data: SongData): Promise<void> 
     });
   } catch {
     console.error("Failed to save song data");
+  }
+}
+
+/** Fetch the saved songs library. */
+export async function fetchLibrary(): Promise<LibraryEntry[]> {
+  try {
+    const res = await fetch("/api/song-data?action=list");
+    if (!res.ok) return [];
+    const { library } = await res.json();
+    return library || [];
+  } catch {
+    console.error("Failed to fetch library");
+    return [];
+  }
+}
+
+/** Save a song to the library (title + full text + hash). */
+export async function saveToLibrary(hash: string, title: string, songText: string): Promise<void> {
+  try {
+    await fetch("/api/song-data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "save-to-library", hash, title, songText }),
+    });
+  } catch {
+    console.error("Failed to save to library");
+  }
+}
+
+/** Delete a song from the library (and its settings). */
+export async function deleteFromLibrary(hash: string): Promise<void> {
+  try {
+    await fetch("/api/song-data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete-from-library", hash }),
+    });
+  } catch {
+    console.error("Failed to delete from library");
   }
 }
 

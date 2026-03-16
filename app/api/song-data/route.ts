@@ -7,6 +7,7 @@ const redis = new Redis({
 });
 
 const KEY_PREFIX = "chord-companion:song:";
+const LIBRARY_KEY = "chord-companion:library";
 
 export interface SongData {
   voicingMap: Record<string, number>;
@@ -14,8 +15,28 @@ export interface SongData {
   syncMarks: number[];
 }
 
-// GET /api/song-data?hash=<sha256>
+export interface LibraryEntry {
+  hash: string;
+  title: string;
+  songText: string;
+  savedAt: number; // epoch ms
+}
+
+// GET /api/song-data?hash=<sha256>         → load single song settings
+// GET /api/song-data?action=list           → list all saved songs
 export async function GET(req: NextRequest) {
+  const action = req.nextUrl.searchParams.get("action");
+
+  if (action === "list") {
+    try {
+      const library = await redis.get<LibraryEntry[]>(LIBRARY_KEY);
+      return NextResponse.json({ library: library || [] });
+    } catch (error: unknown) {
+      console.error("Redis library list error:", error);
+      return NextResponse.json({ library: [] });
+    }
+  }
+
   const hash = req.nextUrl.searchParams.get("hash");
   if (!hash) {
     return NextResponse.json({ error: "hash param required" }, { status: 400 });
@@ -29,10 +50,48 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/song-data  body: { hash, data: SongData }
+// POST /api/song-data
+//   body: { hash, data: SongData }                          → save song settings
+//   body: { action: "save-to-library", hash, title, songText } → add to library
+//   body: { action: "delete-from-library", hash }           → remove from library
 export async function POST(req: NextRequest) {
   try {
-    const { hash, data } = await req.json();
+    const body = await req.json();
+    const { action } = body;
+
+    if (action === "save-to-library") {
+      const { hash, title, songText } = body;
+      if (!hash || !title || !songText) {
+        return NextResponse.json({ error: "hash, title, songText required" }, { status: 400 });
+      }
+      const library = (await redis.get<LibraryEntry[]>(LIBRARY_KEY)) || [];
+      // Update existing or add new
+      const idx = library.findIndex((e) => e.hash === hash);
+      const entry: LibraryEntry = { hash, title, songText, savedAt: Date.now() };
+      if (idx >= 0) {
+        library[idx] = entry;
+      } else {
+        library.unshift(entry);
+      }
+      await redis.set(LIBRARY_KEY, library);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "delete-from-library") {
+      const { hash } = body;
+      if (!hash) {
+        return NextResponse.json({ error: "hash required" }, { status: 400 });
+      }
+      const library = (await redis.get<LibraryEntry[]>(LIBRARY_KEY)) || [];
+      const filtered = library.filter((e) => e.hash !== hash);
+      await redis.set(LIBRARY_KEY, filtered);
+      // Also delete the song settings
+      await redis.del(`${KEY_PREFIX}${hash}`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // Default: save song settings
+    const { hash, data } = body;
     if (!hash || !data) {
       return NextResponse.json({ error: "hash and data required" }, { status: 400 });
     }

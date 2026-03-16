@@ -13,7 +13,11 @@ import {
   hashSongText,
   loadSongData,
   useDebouncedSave,
+  fetchLibrary,
+  saveToLibrary,
+  deleteFromLibrary,
   SongData,
+  LibraryEntry,
 } from "./lib/persistence";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -692,6 +696,16 @@ export default function ChordCompanion() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "loaded">("idle");
   const debouncedSave = useDebouncedSave(1200);
 
+  // Song library
+  const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [songTitle, setSongTitle] = useState("");
+
+  // Load library on mount
+  useEffect(() => {
+    fetchLibrary().then(setLibrary);
+  }, []);
+
   // Auto-save when voicingMap, lyricOffsets, or syncMarks change (after initial load)
   const hasLoadedRef = useRef(false);
   useEffect(() => {
@@ -703,7 +717,7 @@ export default function ChordCompanion() {
     return () => clearTimeout(t);
   }, [songHash, voicingMap, lyricOffsets, syncMarks, debouncedSave]);
 
-  const loadSong = useCallback(async (text: string) => {
+  const loadSong = useCallback(async (text: string, title?: string) => {
     const lines = text.split("\n");
     setParsedLines(lines);
     setSongText(text);
@@ -720,6 +734,16 @@ export default function ChordCompanion() {
     // Check Redis for persisted data
     const hash = await hashSongText(text);
     setSongHash(hash);
+
+    // Set title from library entry or find from library
+    if (title) {
+      setSongTitle(title);
+    } else {
+      // Check if this song is already in the library
+      const existing = library.find((e) => e.hash === hash);
+      setSongTitle(existing?.title || "");
+    }
+
     const saved = await loadSongData(hash);
     if (saved) {
       // Merge: only apply voicing indices that are valid for current chord set
@@ -740,13 +764,35 @@ export default function ChordCompanion() {
     setIsLoaded(true);
     // Only show config modal if no saved voicings were loaded
     if (!saved) setShowConfig(true);
-  }, []);
+  }, [library]);
+
+  const handleSaveToLibrary = async () => {
+    if (!songHash || !songText) return;
+    const title = songTitle.trim() || "Untitled Song";
+    await saveToLibrary(songHash, title, songText);
+    const updated = await fetchLibrary();
+    setLibrary(updated);
+    setSongTitle(title);
+  };
+
+  const handleDeleteFromLibrary = async (hash: string) => {
+    await deleteFromLibrary(hash);
+    const updated = await fetchLibrary();
+    setLibrary(updated);
+  };
+
+  const loadFromLibrary = (entry: LibraryEntry) => {
+    setSongTitle(entry.title);
+    setShowLibrary(false);
+    setInputText(entry.songText);
+    loadSong(entry.songText, entry.title);
+  };
 
   const reset = () => {
     setIsLoaded(false); setSongText(""); setParsedLines([]);
     setUniqueChords([]); setVoicingMap({}); setInputText("");
     setLyricOffsets({}); setSyncMarks([]);
-    setSongHash(null); setSaveStatus("idle");
+    setSongHash(null); setSaveStatus("idle"); setSongTitle("");
     hasLoadedRef.current = false;
   };
 
@@ -801,6 +847,31 @@ export default function ChordCompanion() {
                 {saveStatus === "loaded" ? "● restored" : saveStatus === "saving" ? "saving…" : "✓ saved"}
               </span>
             )}
+            {/* Save to library — prompts for title if not yet saved */}
+            {(() => {
+              const inLibrary = library.some((e) => e.hash === songHash);
+              return (
+                <button onClick={() => {
+                  if (!inLibrary && !songTitle.trim()) {
+                    const title = window.prompt("Song title:");
+                    if (!title) return;
+                    setSongTitle(title);
+                    // Need to wait for state to propagate — just call directly
+                    hashSongText(songText).then((h) => {
+                      saveToLibrary(h, title, songText).then(() => fetchLibrary().then(setLibrary));
+                    });
+                  } else {
+                    handleSaveToLibrary();
+                  }
+                }} style={{
+                  background: inLibrary ? "rgba(160,224,128,0.1)" : "rgba(240,230,140,0.08)",
+                  border: `1px solid ${inLibrary ? "#3a5a2a" : "#3a3a2a"}`,
+                  color: inLibrary ? "#a0e080" : "#f0e68c",
+                  borderRadius: 8, padding: "7px 14px", cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 0.5,
+                }}>{inLibrary ? "✓ In Library" : "Save Song"}</button>
+              );
+            })()}
             <button onClick={reset} style={{
               background: "none", border: "1px solid #2a2a4a", color: "#5a5a7a",
               borderRadius: 8, padding: "7px 14px", cursor: "pointer",
@@ -856,6 +927,62 @@ export default function ChordCompanion() {
                   fontFamily: "'JetBrains Mono', monospace", fontSize: 13,
                 }}>Try Sample</button>
             </div>
+
+            {/* Saved Songs Library */}
+            {library.length > 0 && (
+              <div style={{ marginTop: 32 }}>
+                <button onClick={() => setShowLibrary(!showLibrary)} style={{
+                  background: "none", border: "1px solid #2a2a4a", color: "#e8b4f8",
+                  borderRadius: 10, padding: "10px 20px", cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600,
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  <span>Saved ({library.length})</span>
+                  <span style={{ fontSize: 10, color: "#5a5a7a" }}>{showLibrary ? "▲" : "▼"}</span>
+                </button>
+                {showLibrary && (
+                  <div style={{
+                    marginTop: 12, background: "#0e0e1f", border: "1px solid #2a2a4a",
+                    borderRadius: 12, overflow: "hidden",
+                  }}>
+                    {library.map((entry) => (
+                      <div key={entry.hash} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "12px 16px", borderBottom: "1px solid #1a1a3a",
+                        cursor: "pointer", transition: "background 0.15s",
+                      }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(232,180,248,0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <div onClick={() => loadFromLibrary(entry)} style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            color: "#e8b4f8", fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 14, fontWeight: 600, marginBottom: 2,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>{entry.title}</div>
+                          <div style={{ color: "#5a5a7a", fontSize: 11 }}>
+                            {new Date(entry.savedAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Delete "${entry.title}"?`)) {
+                            handleDeleteFromLibrary(entry.hash);
+                          }
+                        }} style={{
+                          background: "none", border: "none", color: "#5a5a6a",
+                          cursor: "pointer", fontSize: 14, padding: "4px 8px",
+                          borderRadius: 6, flexShrink: 0,
+                        }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = "#ff6b6b")}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = "#5a5a6a")}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (
