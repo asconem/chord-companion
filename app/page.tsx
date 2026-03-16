@@ -222,6 +222,9 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
   // Detect tab notation lines: e.g. "E:---0---0--|" or "e|---0---|"
   const isTabLine = (line: string) => /^\s*[EADGBe][:|]\s*[-0-9~^hp\/\\|x()\s]+$/i.test(line.trim());
 
+  // Strip parenthesized annotations like (Fill 1), (Fill 2) so they don't dilute chord detection
+  const stripAnnotations = (line: string) => line.replace(/\(Fill\s*\d*\)/gi, "").trim();
+
   const rows: Row[] = [];
   let i = 0;
   let pendingSection: string | null = null;
@@ -240,14 +243,16 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       }
       rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines });
       pendingSection = null;
-    } else if (isChordLine(line)) {
+    } else if (isChordLine(stripAnnotations(line))) {
       const chords: { name: string; col: number }[] = [];
       const regex = /(\S+)/g;
       let match: RegExpExecArray | null;
       while ((match = regex.exec(line)) !== null) {
         if (isChordToken(match[1])) chords.push({ name: match[1], col: match.index });
       }
-      const nextLine = i + 1 < lines.length && !isChordLine(lines[i + 1]) && lines[i + 1].trim() ? lines[i + 1] : null;
+      // Next line is lyrics only if it's not a chord line, not a tab line, and not empty
+      const nextRaw = i + 1 < lines.length ? lines[i + 1] : null;
+      const nextLine = nextRaw && nextRaw.trim() && !isChordLine(stripAnnotations(nextRaw)) && !isTabLine(nextRaw) ? nextRaw : null;
       rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null });
       pendingSection = null;
       i += nextLine !== null ? 2 : 1;
