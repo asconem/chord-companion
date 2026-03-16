@@ -747,7 +747,7 @@ export default function ChordCompanion() {
     return () => clearTimeout(t);
   }, [songHash, voicingMap, lyricOffsets, syncMarks, chatMessages, debouncedSave]);
 
-  const loadSong = useCallback(async (text: string, title?: string) => {
+  const loadSong = useCallback(async (text: string, title?: string, fromLibrary = false) => {
     // Strip pagination artifacts (e.g. "Page 1/3") from pasted chord sheets
     const cleaned = text.split("\n").filter(l => !/^\s*Page\s+\d+\/\d+\s*$/i.test(l)).join("\n");
     const lines = cleaned.split("\n");
@@ -796,8 +796,8 @@ export default function ChordCompanion() {
 
     hasLoadedRef.current = true;
     setIsLoaded(true);
-    // Only show config modal if no saved voicings were loaded
-    if (!saved) setShowConfig(true);
+    // Show voicing config on paste; skip when loading from library (user already configured)
+    if (!fromLibrary) setShowConfig(true);
   }, [library]);
 
   const handleSaveToLibrary = async () => {
@@ -819,7 +819,7 @@ export default function ChordCompanion() {
     setSongTitle(entry.title);
     setShowLibrary(false);
     setInputText(entry.songText);
-    loadSong(entry.songText, entry.title);
+    loadSong(entry.songText, entry.title, true);
   };
 
   const reset = () => {
