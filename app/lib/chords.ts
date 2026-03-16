@@ -316,6 +316,8 @@ export const CHORD_DB: Record<string, ChordVoicing[]> = {
             { name: "G/B (full)",       frets: [-1,2,0,0,3,3], fingers: [0,1,0,0,3,4], baseFret: 1 } ],
   "G/D":  [ { name: "G/D Open",         frets: [-1,-1,0,0,0,3], fingers: [0,0,0,0,0,3], baseFret: 1 },
             { name: "G/D (full)",       frets: [-1,-1,0,0,3,3], fingers: [0,0,0,0,3,4], baseFret: 1 } ],
+  "G/F#": [ { name: "G/F# Open",       frets: [2,0,0,0,0,3], fingers: [1,0,0,0,0,3], baseFret: 1 },
+            { name: "G/F# (full)",      frets: [2,0,0,0,3,3], fingers: [1,0,0,0,3,4], baseFret: 1 } ],
   "G7/B": [ { name: "G7/B Open",        frets: [-1,2,0,0,0,1], fingers: [0,2,0,0,0,1], baseFret: 1 } ],
   "Am/E": [ { name: "Am/E Open",        frets: [0,0,2,2,1,0], fingers: [0,0,2,3,1,0], baseFret: 1 } ],
   "Am/G": [ { name: "Am/G Open",        frets: [3,0,2,2,1,0], fingers: [4,0,3,2,1,0], baseFret: 1 } ],
