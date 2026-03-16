@@ -216,7 +216,11 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     chords: { name: string; col: number }[];
     chordLine: string;
     lyricLine: string | null;
+    tabBlock: string[] | null;
   };
+
+  // Detect tab notation lines: e.g. "E:---0---0--|" or "e|---0---|"
+  const isTabLine = (line: string) => /^\s*[EADGBe][:|]\s*[-0-9~^hp\/\\|x()\s]+$/i.test(line.trim());
 
   const rows: Row[] = [];
   let i = 0;
@@ -225,8 +229,17 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed) { i++; continue; }
-    if (/^\[.*\]$/.test(trimmed) || /^(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Solo|Interlude)/i.test(trimmed)) {
+    if (/^\[.*\]$/.test(trimmed) || /^(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Solo|Interlude|Fill)/i.test(trimmed)) {
       pendingSection = trimmed; i++;
+    } else if (isTabLine(line)) {
+      // Collect consecutive tab lines into a block
+      const tabLines: string[] = [];
+      while (i < lines.length && isTabLine(lines[i])) {
+        tabLines.push(lines[i]);
+        i++;
+      }
+      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines });
+      pendingSection = null;
     } else if (isChordLine(line)) {
       const chords: { name: string; col: number }[] = [];
       const regex = /(\S+)/g;
@@ -235,11 +248,11 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
         if (isChordToken(match[1])) chords.push({ name: match[1], col: match.index });
       }
       const nextLine = i + 1 < lines.length && !isChordLine(lines[i + 1]) && lines[i + 1].trim() ? lines[i + 1] : null;
-      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine });
+      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null });
       pendingSection = null;
       i += nextLine !== null ? 2 : 1;
     } else {
-      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: line });
+      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: line, tabBlock: null });
       pendingSection = null; i++;
     }
   }
@@ -518,6 +531,13 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                     );
                   })}
                 </div>
+              ) : row.tabBlock ? (
+                <pre style={{
+                  fontFamily: MONO, fontSize: 13, color: "#a0c8e0", lineHeight: "1.4",
+                  margin: 0, padding: "8px 12px",
+                  background: "rgba(160,200,224,0.05)", borderRadius: 8,
+                  border: "1px solid #1a2a3a", overflowX: "auto", whiteSpace: "pre",
+                }}>{row.tabBlock.join("\n")}</pre>
               ) : (
                 row.lyricLine && <div style={{ fontFamily: MONO, fontSize: 18, color: "#c8c8e0", lineHeight: "1.4" }}>{row.lyricLine}</div>
               )}
