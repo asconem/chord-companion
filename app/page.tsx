@@ -208,7 +208,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
   const animRef = useRef<number>(0);
 
   type SyncMode = "manual" | "syncing" | "synced";
-  const [mode, setMode] = useState<SyncMode>("manual");
+  const [mode, setMode] = useState<SyncMode>(syncMarks.length > 0 ? "synced" : "manual");
   const syncingPageRef = useRef(0);
 
   type Row = {
@@ -588,8 +588,12 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
    ═══════════════════════════════════════════════════════════════ */
 interface ChatMessage { role: "user" | "assistant"; content: string }
 
-function ChatPanel({ songText, voicingMap }: { songText: string; voicingMap: Record<string, number> }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+function ChatPanel({ songText, voicingMap, messages, setMessages }: {
+  songText: string;
+  voicingMap: Record<string, number>;
+  messages: ChatMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+}) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -690,6 +694,7 @@ export default function ChordCompanion() {
   // Lifted from SongRenderer for persistence
   const [lyricOffsets, setLyricOffsets] = useState<Record<string, number>>({});
   const [syncMarks, setSyncMarks] = useState<number[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Persistence
   const [songHash, setSongHash] = useState<string | null>(null);
@@ -711,11 +716,11 @@ export default function ChordCompanion() {
   useEffect(() => {
     if (!songHash || !hasLoadedRef.current) return;
     setSaveStatus("saving");
-    debouncedSave(songHash, { voicingMap, lyricOffsets, syncMarks });
+    debouncedSave(songHash, { voicingMap, lyricOffsets, syncMarks, chatMessages });
     // Show "saved" after debounce fires (approximate with timer)
     const t = setTimeout(() => setSaveStatus("saved"), 1500);
     return () => clearTimeout(t);
-  }, [songHash, voicingMap, lyricOffsets, syncMarks, debouncedSave]);
+  }, [songHash, voicingMap, lyricOffsets, syncMarks, chatMessages, debouncedSave]);
 
   const loadSong = useCallback(async (text: string, title?: string) => {
     const lines = text.split("\n");
@@ -729,6 +734,7 @@ export default function ChordCompanion() {
     // Reset lifted state
     setLyricOffsets({});
     setSyncMarks([]);
+    setChatMessages([]);
     hasLoadedRef.current = false;
 
     // Check Redis for persisted data
@@ -754,6 +760,7 @@ export default function ChordCompanion() {
       setVoicingMap(mergedMap);
       setLyricOffsets(saved.lyricOffsets || {});
       setSyncMarks(saved.syncMarks || []);
+      setChatMessages(saved.chatMessages || []);
       setSaveStatus("loaded");
     } else {
       setVoicingMap(defaultMap);
@@ -791,7 +798,7 @@ export default function ChordCompanion() {
   const reset = () => {
     setIsLoaded(false); setSongText(""); setParsedLines([]);
     setUniqueChords([]); setVoicingMap({}); setInputText("");
-    setLyricOffsets({}); setSyncMarks([]);
+    setLyricOffsets({}); setSyncMarks([]); setChatMessages([]);
     setSongHash(null); setSaveStatus("idle"); setSongTitle("");
     hasLoadedRef.current = false;
   };
@@ -1078,7 +1085,7 @@ export default function ChordCompanion() {
               color: "#8a8a9a", cursor: "pointer", zIndex: 10,
               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
             }}>{chatCollapsed ? "◀" : "▶"}</button>
-            {!chatCollapsed && <ChatPanel songText={songText} voicingMap={voicingMap} />}
+            {!chatCollapsed && <ChatPanel songText={songText} voicingMap={voicingMap} messages={chatMessages} setMessages={setChatMessages} />}
           </div>
         </div>
       )}

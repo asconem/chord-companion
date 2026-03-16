@@ -13,6 +13,7 @@ export interface SongData {
   voicingMap: Record<string, number>;
   lyricOffsets: Record<string, number>;
   syncMarks: number[];
+  chatMessages: { role: "user" | "assistant"; content: string }[];
 }
 
 export interface LibraryEntry {
