@@ -743,9 +743,11 @@ export default function ChordCompanion() {
   }, [songHash, voicingMap, lyricOffsets, syncMarks, chatMessages, debouncedSave]);
 
   const loadSong = useCallback(async (text: string, title?: string) => {
-    const lines = text.split("\n");
+    // Strip pagination artifacts (e.g. "Page 1/3") from pasted chord sheets
+    const cleaned = text.split("\n").filter(l => !/^\s*Page\s+\d+\/\d+\s*$/i.test(l)).join("\n");
+    const lines = cleaned.split("\n");
     setParsedLines(lines);
-    setSongText(text);
+    setSongText(cleaned);
     const chords = extractUniqueChords(lines);
     setUniqueChords(chords);
     const defaultMap: Record<string, number> = {};
