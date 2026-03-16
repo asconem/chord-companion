@@ -9,6 +9,12 @@ import {
   extractUniqueChords,
   SAMPLE_SONG,
 } from "./lib/chords";
+import {
+  hashSongText,
+  loadSongData,
+  useDebouncedSave,
+  SongData,
+} from "./lib/persistence";
 
 /* ═══════════════════════════════════════════════════════════════
    SVG CHORD DIAGRAM — HORIZONTAL (nut on left, like looking down at neck)
@@ -165,10 +171,14 @@ function ChordConfigModal({
    SONG RENDERER — Paginated teleprompter with audio sync
    Modes: Manual | Sync (record timestamps) | Play (synced playback)
    ═══════════════════════════════════════════════════════════════ */
-function SongRenderer({ lines, voicingMap, showDiagrams }: {
+function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricOffsets, syncMarks, setSyncMarks }: {
   lines: string[];
   voicingMap: Record<string, number>;
   showDiagrams: boolean;
+  lyricOffsets: Record<string, number>;
+  setLyricOffsets: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  syncMarks: number[];
+  setSyncMarks: React.Dispatch<React.SetStateAction<number[]>>;
 }) {
   const MONO = "'JetBrains Mono', monospace";
   const ROWS_PER_PAGE = 3;
@@ -181,8 +191,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams }: {
   const DIAGRAM_W = Math.min(180, Math.max(90, (perRow - 40) / 0.6786 * 0.85));
 
   const [page, setPage] = useState(0);
-  // Per-segment horizontal nudge offsets: keyed by "rowIdx-chordIdx"
-  const [lyricOffsets, setLyricOffsets] = useState<Record<string, number>>({});
+  // Drag ref for lyric nudging (internal, not persisted directly)
   const dragRef = useRef<{ key: string; startX: number; startOffset: number } | null>(null);
 
   // Audio state
@@ -196,7 +205,6 @@ function SongRenderer({ lines, voicingMap, showDiagrams }: {
 
   type SyncMode = "manual" | "syncing" | "synced";
   const [mode, setMode] = useState<SyncMode>("manual");
-  const [syncMarks, setSyncMarks] = useState<number[]>([]);
   const syncingPageRef = useRef(0);
 
   type Row = {
@@ -675,7 +683,27 @@ export default function ChordCompanion() {
   const [inputText, setInputText] = useState("");
   const [chatCollapsed, setChatCollapsed] = useState(false);
 
-  const loadSong = useCallback((text: string) => {
+  // Lifted from SongRenderer for persistence
+  const [lyricOffsets, setLyricOffsets] = useState<Record<string, number>>({});
+  const [syncMarks, setSyncMarks] = useState<number[]>([]);
+
+  // Persistence
+  const [songHash, setSongHash] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "loaded">("idle");
+  const debouncedSave = useDebouncedSave(1200);
+
+  // Auto-save when voicingMap, lyricOffsets, or syncMarks change (after initial load)
+  const hasLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!songHash || !hasLoadedRef.current) return;
+    setSaveStatus("saving");
+    debouncedSave(songHash, { voicingMap, lyricOffsets, syncMarks });
+    // Show "saved" after debounce fires (approximate with timer)
+    const t = setTimeout(() => setSaveStatus("saved"), 1500);
+    return () => clearTimeout(t);
+  }, [songHash, voicingMap, lyricOffsets, syncMarks, debouncedSave]);
+
+  const loadSong = useCallback(async (text: string) => {
     const lines = text.split("\n");
     setParsedLines(lines);
     setSongText(text);
@@ -683,14 +711,43 @@ export default function ChordCompanion() {
     setUniqueChords(chords);
     const defaultMap: Record<string, number> = {};
     chords.forEach((c) => (defaultMap[c] = 0));
-    setVoicingMap(defaultMap);
+
+    // Reset lifted state
+    setLyricOffsets({});
+    setSyncMarks([]);
+    hasLoadedRef.current = false;
+
+    // Check Redis for persisted data
+    const hash = await hashSongText(text);
+    setSongHash(hash);
+    const saved = await loadSongData(hash);
+    if (saved) {
+      // Merge: only apply voicing indices that are valid for current chord set
+      const mergedMap: Record<string, number> = { ...defaultMap };
+      for (const [chord, idx] of Object.entries(saved.voicingMap)) {
+        if (chord in mergedMap) mergedMap[chord] = idx;
+      }
+      setVoicingMap(mergedMap);
+      setLyricOffsets(saved.lyricOffsets || {});
+      setSyncMarks(saved.syncMarks || []);
+      setSaveStatus("loaded");
+    } else {
+      setVoicingMap(defaultMap);
+      setSaveStatus("idle");
+    }
+
+    hasLoadedRef.current = true;
     setIsLoaded(true);
-    setShowConfig(true);
+    // Only show config modal if no saved voicings were loaded
+    if (!saved) setShowConfig(true);
   }, []);
 
   const reset = () => {
     setIsLoaded(false); setSongText(""); setParsedLines([]);
     setUniqueChords([]); setVoicingMap({}); setInputText("");
+    setLyricOffsets({}); setSyncMarks([]);
+    setSongHash(null); setSaveStatus("idle");
+    hasLoadedRef.current = false;
   };
 
   return (
@@ -735,6 +792,15 @@ export default function ChordCompanion() {
               borderRadius: 8, padding: "7px 14px", cursor: "pointer",
               fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 0.5,
             }}>Voicings</button>
+            {saveStatus !== "idle" && (
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: 0.5,
+                color: saveStatus === "loaded" ? "#a0e080" : saveStatus === "saved" ? "#5a8a5a" : "#5a5a7a",
+                alignSelf: "center", transition: "color 0.3s",
+              }}>
+                {saveStatus === "loaded" ? "● restored" : saveStatus === "saving" ? "saving…" : "✓ saved"}
+              </span>
+            )}
             <button onClick={reset} style={{
               background: "none", border: "1px solid #2a2a4a", color: "#5a5a7a",
               borderRadius: 8, padding: "7px 14px", cursor: "pointer",
@@ -866,7 +932,9 @@ export default function ChordCompanion() {
               );
             })()}
             <div style={{ flex: 1, overflow: "hidden" }}>
-              <SongRenderer lines={parsedLines} voicingMap={voicingMap} showDiagrams={showDiagrams} />
+              <SongRenderer lines={parsedLines} voicingMap={voicingMap} showDiagrams={showDiagrams}
+                lyricOffsets={lyricOffsets} setLyricOffsets={setLyricOffsets}
+                syncMarks={syncMarks} setSyncMarks={setSyncMarks} />
             </div>
           </div>
           {/* Chat panel */}
