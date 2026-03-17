@@ -249,11 +249,14 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     let fj = fi + 1;
     while (fj < lines.length && !lines[fj].trim()) fj++;
     // Skip a chord line if present (e.g. "G  G/F#" above the tab)
-    if (fj < lines.length && isChordLine(stripAnnotations(lines[fj]))) fj++;
+    if (fj < lines.length && isChordLine(stripAnnotations(lines[fj]))) {
+      fj++;
+      while (fj < lines.length && !lines[fj].trim()) fj++;
+    }
     // Collect tab lines
     const tabLines: string[] = [];
-    while (fj < lines.length && isTabLine(lines[fj])) {
-      tabLines.push(lines[fj]);
+    while (fj < lines.length && (isTabLine(lines[fj]) || !lines[fj].trim())) {
+      if (isTabLine(lines[fj])) tabLines.push(lines[fj]);
       fj++;
     }
     if (tabLines.length > 0) fillMap.set(fillName, tabLines);
@@ -274,8 +277,11 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       // Skip the entire fill definition block (header + optional chord line + tab lines)
       i++;
       while (i < lines.length && !lines[i].trim()) i++;
-      if (i < lines.length && isChordLine(stripAnnotations(lines[i]))) i++;
-      while (i < lines.length && isTabLine(lines[i])) i++;
+      if (i < lines.length && isChordLine(stripAnnotations(lines[i]))) {
+        i++;
+        while (i < lines.length && !lines[i].trim()) i++;
+      }
+      while (i < lines.length && (isTabLine(lines[i]) || !lines[i].trim())) i++;
       continue;
     }
 
@@ -596,6 +602,17 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                       </div>
                     );
                   })}
+                  {/* Inlined fills as columns alongside chord diagrams */}
+                  {row.fills && row.fills.map((fb, fi) => (
+                    <div key={`fill-${fi}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                      <pre style={{
+                        fontFamily: MONO, fontSize: 11, color: "#a0c8e0", lineHeight: "1.3",
+                        margin: 0, padding: "6px 10px",
+                        background: "rgba(160,200,224,0.05)", borderRadius: 6,
+                        border: "1px solid #1a2a3a", whiteSpace: "pre",
+                      }}>{fb.join("\n")}</pre>
+                    </div>
+                  ))}
                 </div>
               ) : row.tabBlock ? (
                 <pre style={{
@@ -604,19 +621,21 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                   background: "rgba(160,200,224,0.05)", borderRadius: 8,
                   border: "1px solid #1a2a3a", overflowX: "auto", whiteSpace: "pre",
                 }}>{row.tabBlock.join("\n")}</pre>
+              ) : row.fills ? (
+                /* Standalone fill reference (no chords on this line) */
+                <div style={{ display: "flex", gap: 16 }}>
+                  {row.fills.map((fb, fi) => (
+                    <pre key={`fill-${fi}`} style={{
+                      fontFamily: MONO, fontSize: 12, color: "#a0c8e0", lineHeight: "1.3",
+                      margin: 0, padding: "6px 10px",
+                      background: "rgba(160,200,224,0.05)", borderRadius: 6,
+                      border: "1px solid #1a2a3a", whiteSpace: "pre",
+                    }}>{fb.join("\n")}</pre>
+                  ))}
+                </div>
               ) : (
                 row.lyricLine && <div style={{ fontFamily: MONO, fontSize: 18, color: "#c8c8e0", lineHeight: "1.4" }}>{row.lyricLine}</div>
               )}
-              {/* Inlined fill tab blocks */}
-              {row.fills && row.fills.map((fb, fi) => (
-                <pre key={`fill-${fi}`} style={{
-                  fontFamily: MONO, fontSize: 12, color: "#a0c8e0", lineHeight: "1.3",
-                  margin: "4px 0 0 0", padding: "6px 10px",
-                  background: "rgba(160,200,224,0.05)", borderRadius: 6,
-                  border: "1px solid #1a2a3a", overflowX: "auto", whiteSpace: "pre",
-                  maxWidth: "fit-content",
-                }}>{fb.join("\n")}</pre>
-              ))}
             </div>
           );
         })}
