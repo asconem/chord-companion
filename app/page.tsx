@@ -259,7 +259,10 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       fj++;
     }
     if (tabLines.length > 0) fillMap.set(fillName, tabLines);
+    console.log(`[CC DEBUG] fillMap: "${fillName}" → ${tabLines.length} tab lines`);
   }
+
+  console.log("[CC DEBUG] fillMap keys:", Array.from(fillMap.keys()));
 
   const rows: Row[] = [];
   let i = 0;
@@ -273,6 +276,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     // Section headers — but skip fill definitions (they're inlined)
     const isFillDef = /^Fill\s*\d+\s*:/i.test(trimmed);
     if (isFillDef) {
+      console.log(`[CC DEBUG] SKIP FILL DEF L${i}: "${trimmed}"`);
       // Skip the entire fill definition block (header + optional chord line + tab lines)
       i++;
       while (i < lines.length && !lines[i].trim()) i++;
@@ -281,6 +285,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
         while (i < lines.length && !lines[i].trim()) i++;
       }
       while (i < lines.length && (isTabLine(lines[i]) || !lines[i].trim())) i++;
+      console.log(`[CC DEBUG] FILL SKIP resumed at L${i}: "${i < lines.length ? lines[i].trim() : 'EOF'}"`);
       continue;
     }
 
@@ -288,6 +293,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       pendingSection = trimmed; i++;
     } else if (isTabLine(line)) {
       // Collect consecutive tab lines into a block (non-fill tabs, e.g. standalone riffs)
+      console.log(`[CC DEBUG] STANDALONE TAB at L${i}: "${trimmed}"`);
       const tabLines: string[] = [];
       while (i < lines.length && isTabLine(lines[i])) {
         tabLines.push(lines[i]);
