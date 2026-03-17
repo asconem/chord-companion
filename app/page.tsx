@@ -292,8 +292,8 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     if (/^\[.*\]$/.test(trimmed) || /^(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Solo|Interlude)/i.test(trimmed)) {
       pendingSection = trimmed; i++;
     } else if (isTabLine(line)) {
-      // Collect consecutive tab lines into a block (non-fill tabs, e.g. standalone riffs)
       console.log(`[CC DEBUG] STANDALONE TAB at L${i}: "${trimmed}"`);
+      // Collect consecutive tab lines into a block (non-fill tabs, e.g. standalone riffs)
       const tabLines: string[] = [];
       while (i < lines.length && isTabLine(lines[i])) {
         tabLines.push(lines[i]);
@@ -571,14 +571,14 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
             }
           }
           return (
-            <div key={ri} style={{ marginBottom: 0 }}>
+            <div key={ri} style={{ marginBottom: 0, overflow: "hidden" }}>
               {row.section && (
                 <div style={{ color: "#f0e68c", fontFamily: MONO, fontSize: 14, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", marginBottom: 2 }}>
                   {row.section}
                 </div>
               )}
               {row.chords.length > 0 ? (
-                <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
                   {chordSlice.map((c, j) => {
                     const voicings = lookupChord(c.name);
                     const sel = voicingMap[c.name] ?? 0;
@@ -587,7 +587,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                     const offsetKey = `${absRowIdx}-${j}`;
                     const offset = lyricOffsets[offsetKey] || 0;
                     return (
-                      <div key={j} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div key={j} style={{ flex: chordSlice.length > 1 ? 1 : "0 1 auto", display: "flex", flexDirection: "column", alignItems: "center", maxWidth: chordSlice.length === 1 ? DIAGRAM_W + 40 : undefined }}>
                         {showDiagrams && v && <HorizontalChordDiagram voicing={v} width={DIAGRAM_W} />}
                         <div style={{ color: "#e8b4f8", fontFamily: MONO, fontWeight: 700, fontSize: Math.max(14, DIAGRAM_W * 0.1), marginTop: 1 }}>{c.name}</div>
                         {lyricSegments[j] && (
@@ -621,11 +621,11 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                         )}
                         {c.fill && (
                           <pre style={{
-                            fontFamily: MONO, fontSize: 10, color: "#a0c8e0", lineHeight: "1.2",
-                            margin: "4px 0 0 0", padding: "4px 8px",
-                            background: "rgba(160,200,224,0.05)", borderRadius: 5,
+                            fontFamily: MONO, fontSize: 9, color: "#a0c8e0", lineHeight: "1.15",
+                            margin: "2px 0 0 0", padding: "3px 6px",
+                            background: "rgba(160,200,224,0.05)", borderRadius: 4,
                             border: "1px solid #1a2a3a", whiteSpace: "pre",
-                            alignSelf: "stretch", overflow: "hidden",
+                            maxWidth: "100%", overflow: "hidden",
                           }}>{c.fill.join("\n")}</pre>
                         )}
                       </div>
