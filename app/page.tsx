@@ -217,6 +217,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
     chordLine: string;
     lyricLine: string | null;
     tabBlock: string[] | null;
+    fills: string[][] | null; // inlined fill tab blocks referenced by this row
   };
 
   // Detect tab notation lines: e.g. "E:---0---0--|" or "e|---0---|"
@@ -225,23 +226,69 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
   // Strip parenthesized annotations like (Fill 1), (Fill 2) so they don't dilute chord detection
   const stripAnnotations = (line: string) => line.replace(/\(Fill\s*\d*\)/gi, "").trim();
 
+  // Extract fill references from a line: "(Fill 1)" → ["Fill 1"]
+  const extractFillRefs = (line: string): string[] => {
+    const refs: string[] = [];
+    const re = /\(Fill\s*(\d+)\)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) {
+      refs.push(`Fill ${m[1]}`);
+    }
+    return refs;
+  };
+
+  // Pre-scan: build a map of fill definitions → tab blocks
+  // Looks for "Fill N:" header followed by optional chord line then tab lines
+  const fillMap = new Map<string, string[]>();
+  for (let fi = 0; fi < lines.length; fi++) {
+    const ftrimmed = lines[fi].trim();
+    const fillMatch = /^Fill\s*(\d+)\s*:/i.exec(ftrimmed);
+    if (!fillMatch) continue;
+    const fillName = `Fill ${fillMatch[1]}`;
+    // Scan ahead past blank lines and optional chord line to find tab lines
+    let fj = fi + 1;
+    while (fj < lines.length && !lines[fj].trim()) fj++;
+    // Skip a chord line if present (e.g. "G  G/F#" above the tab)
+    if (fj < lines.length && isChordLine(stripAnnotations(lines[fj]))) fj++;
+    // Collect tab lines
+    const tabLines: string[] = [];
+    while (fj < lines.length && isTabLine(lines[fj])) {
+      tabLines.push(lines[fj]);
+      fj++;
+    }
+    if (tabLines.length > 0) fillMap.set(fillName, tabLines);
+  }
+
   const rows: Row[] = [];
   let i = 0;
   let pendingSection: string | null = null;
+
   while (i < lines.length) {
     const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed) { i++; continue; }
-    if (/^\[.*\]$/.test(trimmed) || /^(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Solo|Interlude|Fill)/i.test(trimmed)) {
+
+    // Section headers — but skip fill definitions (they're inlined)
+    const isFillDef = /^Fill\s*\d+\s*:/i.test(trimmed);
+    if (isFillDef) {
+      // Skip the entire fill definition block (header + optional chord line + tab lines)
+      i++;
+      while (i < lines.length && !lines[i].trim()) i++;
+      if (i < lines.length && isChordLine(stripAnnotations(lines[i]))) i++;
+      while (i < lines.length && isTabLine(lines[i])) i++;
+      continue;
+    }
+
+    if (/^\[.*\]$/.test(trimmed) || /^(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Solo|Interlude)/i.test(trimmed)) {
       pendingSection = trimmed; i++;
     } else if (isTabLine(line)) {
-      // Collect consecutive tab lines into a block
+      // Collect consecutive tab lines into a block (non-fill tabs, e.g. standalone riffs)
       const tabLines: string[] = [];
       while (i < lines.length && isTabLine(lines[i])) {
         tabLines.push(lines[i]);
         i++;
       }
-      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines });
+      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines, fills: null });
       pendingSection = null;
     } else if (isChordLine(stripAnnotations(line))) {
       const chords: { name: string; col: number }[] = [];
@@ -250,14 +297,28 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       while ((match = regex.exec(line)) !== null) {
         if (isChordToken(match[1])) chords.push({ name: match[1], col: match.index });
       }
+      // Resolve fill references
+      const fillRefs = extractFillRefs(line);
+      const fills: string[][] = [];
+      for (const ref of fillRefs) {
+        const fb = fillMap.get(ref);
+        if (fb) fills.push(fb);
+      }
       // Next line is lyrics only if it's not a chord line, not a tab line, and not empty
       const nextRaw = i + 1 < lines.length ? lines[i + 1] : null;
       const nextLine = nextRaw && nextRaw.trim() && !isChordLine(stripAnnotations(nextRaw)) && !isTabLine(nextRaw) ? nextRaw : null;
-      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null });
+      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null, fills: fills.length > 0 ? fills : null });
       pendingSection = null;
       i += nextLine !== null ? 2 : 1;
     } else {
-      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: line, tabBlock: null });
+      // Check if this plain text line has fill refs (e.g. standalone "(Fill 3)" line)
+      const fillRefs = extractFillRefs(line);
+      const fills: string[][] = [];
+      for (const ref of fillRefs) {
+        const fb = fillMap.get(ref);
+        if (fb) fills.push(fb);
+      }
+      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: fills.length > 0 ? null : line, tabBlock: null, fills: fills.length > 0 ? fills : null });
       pendingSection = null; i++;
     }
   }
@@ -546,6 +607,16 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
               ) : (
                 row.lyricLine && <div style={{ fontFamily: MONO, fontSize: 18, color: "#c8c8e0", lineHeight: "1.4" }}>{row.lyricLine}</div>
               )}
+              {/* Inlined fill tab blocks */}
+              {row.fills && row.fills.map((fb, fi) => (
+                <pre key={`fill-${fi}`} style={{
+                  fontFamily: MONO, fontSize: 12, color: "#a0c8e0", lineHeight: "1.3",
+                  margin: "4px 0 0 0", padding: "6px 10px",
+                  background: "rgba(160,200,224,0.05)", borderRadius: 6,
+                  border: "1px solid #1a2a3a", overflowX: "auto", whiteSpace: "pre",
+                  maxWidth: "fit-content",
+                }}>{fb.join("\n")}</pre>
+              ))}
             </div>
           );
         })}
