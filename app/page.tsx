@@ -213,11 +213,10 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
 
   type Row = {
     section: string | null;
-    chords: { name: string; col: number }[];
+    chords: { name: string; col: number; fill: string[] | null }[];
     chordLine: string;
     lyricLine: string | null;
     tabBlock: string[] | null;
-    fills: string[][] | null; // inlined fill tab blocks referenced by this row
   };
 
   // Detect tab notation lines: e.g. "E:---0---0--|" or "e|---0---|"
@@ -294,37 +293,52 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
         tabLines.push(lines[i]);
         i++;
       }
-      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines, fills: null });
+      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: tabLines });
       pendingSection = null;
     } else if (isChordLine(stripAnnotations(line))) {
-      const chords: { name: string; col: number }[] = [];
+      // Parse chords and fill references with their positions
+      const chords: { name: string; col: number; fill: string[] | null }[] = [];
       const regex = /(\S+)/g;
       let match: RegExpExecArray | null;
       while ((match = regex.exec(line)) !== null) {
-        if (isChordToken(match[1])) chords.push({ name: match[1], col: match.index });
+        if (isChordToken(match[1])) chords.push({ name: match[1], col: match.index, fill: null });
       }
-      // Resolve fill references
-      const fillRefs = extractFillRefs(line);
-      const fills: string[][] = [];
-      for (const ref of fillRefs) {
-        const fb = fillMap.get(ref);
-        if (fb) fills.push(fb);
+      // Find fill references and associate with the preceding chord by position
+      const fillRefRe = /\(Fill\s*(\d+)\)/gi;
+      let fm: RegExpExecArray | null;
+      while ((fm = fillRefRe.exec(line)) !== null) {
+        const fillName = `Fill ${fm[1]}`;
+        const fillPos = fm.index;
+        const fb = fillMap.get(fillName);
+        if (!fb) continue;
+        // Find the closest preceding chord
+        let bestIdx = chords.length - 1;
+        for (let ci = chords.length - 1; ci >= 0; ci--) {
+          if (chords[ci].col <= fillPos) { bestIdx = ci; break; }
+        }
+        if (bestIdx >= 0 && !chords[bestIdx].fill) {
+          chords[bestIdx].fill = fb;
+        }
       }
       // Next line is lyrics only if it's not a chord line, not a tab line, and not empty
       const nextRaw = i + 1 < lines.length ? lines[i + 1] : null;
       const nextLine = nextRaw && nextRaw.trim() && !isChordLine(stripAnnotations(nextRaw)) && !isTabLine(nextRaw) ? nextRaw : null;
-      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null, fills: fills.length > 0 ? fills : null });
+      rows.push({ section: pendingSection, chords, chordLine: line, lyricLine: nextLine, tabBlock: null });
       pendingSection = null;
       i += nextLine !== null ? 2 : 1;
     } else {
       // Check if this plain text line has fill refs (e.g. standalone "(Fill 3)" line)
       const fillRefs = extractFillRefs(line);
-      const fills: string[][] = [];
+      const standaloneFills: string[] = [];
       for (const ref of fillRefs) {
         const fb = fillMap.get(ref);
-        if (fb) fills.push(fb);
+        if (fb) standaloneFills.push(...fb);
       }
-      rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: fills.length > 0 ? null : line, tabBlock: null, fills: fills.length > 0 ? fills : null });
+      if (standaloneFills.length > 0) {
+        rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: null, tabBlock: standaloneFills });
+      } else {
+        rows.push({ section: pendingSection, chords: [], chordLine: "", lyricLine: line, tabBlock: null });
+      }
       pendingSection = null; i++;
     }
   }
@@ -599,20 +613,18 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                             {lyricSegments[j].trim()}
                           </div>
                         )}
+                        {c.fill && (
+                          <pre style={{
+                            fontFamily: MONO, fontSize: 10, color: "#a0c8e0", lineHeight: "1.2",
+                            margin: "4px 0 0 0", padding: "4px 8px",
+                            background: "rgba(160,200,224,0.05)", borderRadius: 5,
+                            border: "1px solid #1a2a3a", whiteSpace: "pre",
+                            alignSelf: "stretch", overflow: "hidden",
+                          }}>{c.fill.join("\n")}</pre>
+                        )}
                       </div>
                     );
                   })}
-                  {/* Inlined fills as columns alongside chord diagrams */}
-                  {row.fills && row.fills.map((fb, fi) => (
-                    <div key={`fill-${fi}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                      <pre style={{
-                        fontFamily: MONO, fontSize: 11, color: "#a0c8e0", lineHeight: "1.3",
-                        margin: 0, padding: "6px 10px",
-                        background: "rgba(160,200,224,0.05)", borderRadius: 6,
-                        border: "1px solid #1a2a3a", whiteSpace: "pre",
-                      }}>{fb.join("\n")}</pre>
-                    </div>
-                  ))}
                 </div>
               ) : row.tabBlock ? (
                 <pre style={{
@@ -621,18 +633,6 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                   background: "rgba(160,200,224,0.05)", borderRadius: 8,
                   border: "1px solid #1a2a3a", overflowX: "auto", whiteSpace: "pre",
                 }}>{row.tabBlock.join("\n")}</pre>
-              ) : row.fills ? (
-                /* Standalone fill reference (no chords on this line) */
-                <div style={{ display: "flex", gap: 16 }}>
-                  {row.fills.map((fb, fi) => (
-                    <pre key={`fill-${fi}`} style={{
-                      fontFamily: MONO, fontSize: 12, color: "#a0c8e0", lineHeight: "1.3",
-                      margin: 0, padding: "6px 10px",
-                      background: "rgba(160,200,224,0.05)", borderRadius: 6,
-                      border: "1px solid #1a2a3a", whiteSpace: "pre",
-                    }}>{fb.join("\n")}</pre>
-                  ))}
-                </div>
               ) : (
                 row.lyricLine && <div style={{ fontFamily: MONO, fontSize: 18, color: "#c8c8e0", lineHeight: "1.4" }}>{row.lyricLine}</div>
               )}
