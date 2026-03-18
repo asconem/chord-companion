@@ -592,7 +592,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                     const offset = lyricOffsets[offsetKey] || 0;
                     return (
                       <div key={j} style={{ flex: chordSlice.length > 1 ? 1 : "0 1 auto", display: "flex", flexDirection: "column", alignItems: "center", maxWidth: chordSlice.length === 1 ? DIAGRAM_W + 40 : undefined }}>
-                        {showDiagrams && v && !c.fill && <HorizontalChordDiagram voicing={v} width={DIAGRAM_W} />}
+                        {showDiagrams && v && <HorizontalChordDiagram voicing={v} width={c.fill ? DIAGRAM_W * 0.65 : DIAGRAM_W} />}
                         <div style={{ color: "#e8b4f8", fontFamily: MONO, fontWeight: 700, fontSize: Math.max(14, DIAGRAM_W * 0.1), marginTop: 1 }}>{c.name}</div>
                         {lyricSegments[j] && (
                           <div
