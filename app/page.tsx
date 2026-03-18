@@ -185,13 +185,13 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
   setSyncMarks: React.Dispatch<React.SetStateAction<number[]>>;
 }) {
   const MONO = "'JetBrains Mono', monospace";
-  const ROWS_PER_PAGE = 3;
+  const BASE_ROWS_PER_PAGE = 3;
   // Diagram width: calculated from viewport height
   // Header ~77px, palette ~36px, nav ~44px, audio bar ~40px = ~197px overhead
   // Remaining split 3 ways, each row: diagram + chord name(20) + lyric(18) = 38px text
   // Use 85% of theoretical max to ensure margin
   const availH = typeof window !== "undefined" ? window.innerHeight - 200 : 600;
-  const perRow = availH / ROWS_PER_PAGE;
+  const perRow = availH / BASE_ROWS_PER_PAGE;
   const DIAGRAM_W = Math.min(180, Math.max(90, (perRow - 40) / 0.6786 * 0.85));
 
   const [page, setPage] = useState(0);
@@ -348,6 +348,10 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
       pendingSection = null; i++;
     }
   }
+
+  // Dynamic rows per page: fill rows are shorter (no diagram), so fit more
+  const hasFills = rows.some(r => r.chords.some(c => c.fill));
+  const ROWS_PER_PAGE = hasFills ? 4 : BASE_ROWS_PER_PAGE;
 
   const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
   const clampedPage = Math.min(page, Math.max(0, totalPages - 1));
@@ -588,7 +592,7 @@ function SongRenderer({ lines, voicingMap, showDiagrams, lyricOffsets, setLyricO
                     const offset = lyricOffsets[offsetKey] || 0;
                     return (
                       <div key={j} style={{ flex: chordSlice.length > 1 ? 1 : "0 1 auto", display: "flex", flexDirection: "column", alignItems: "center", maxWidth: chordSlice.length === 1 ? DIAGRAM_W + 40 : undefined }}>
-                        {showDiagrams && v && <HorizontalChordDiagram voicing={v} width={DIAGRAM_W} />}
+                        {showDiagrams && v && !c.fill && <HorizontalChordDiagram voicing={v} width={DIAGRAM_W} />}
                         <div style={{ color: "#e8b4f8", fontFamily: MONO, fontWeight: 700, fontSize: Math.max(14, DIAGRAM_W * 0.1), marginTop: 1 }}>{c.name}</div>
                         {lyricSegments[j] && (
                           <div
